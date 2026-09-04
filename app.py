@@ -30,7 +30,7 @@ from PyQt6.QtGui import QIcon, QAction
 
 class FileAnalyzer(QThread):
     """Поток для анализа файлов в папке загрузки"""
-    files_found = pyqtSignal(list)
+    files_found = pyqtSignal(dict)
     
     def __init__(self, folder_path: str):
         super().__init__()
