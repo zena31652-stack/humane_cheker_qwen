@@ -932,10 +932,107 @@ class MainWindow(QMainWindow):
                     self.csv_data[key]['photo'] = photo_str
         
         self.refresh_csv_table()
+        
+        # Сохраняем CSV автоматически после обработки
+        self.save_csv_to_file()
+        
+        # Обновляем статус check_humane=1 в БД и переходим к следующей записи
+        self.mark_record_as_checked_and_next()
+        
         self.statusBar.showMessage(
             f"Обработано файлов: {len(processed_info_files)} инфо-файлов, "
-            f"{len(processed_photos)} изображений"
+            f"{len(processed_photos)} изображений. Запись обновлена."
         )
+    
+    def save_csv_to_file(self):
+        """Сохранение данных в CSV файл без диалога"""
+        if not self.upload_folder:
+            return
+        
+        csv_path = self.get_csv_path()
+        headers = ['uuid_developer', 'slug', 'category_car', 'model',
+                   'file_name', 'photo', 'url_item', 'url_pagination']
+        
+        try:
+            with open(csv_path, 'w', encoding='utf-8', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=headers)
+                writer.writeheader()
+                for row in self.csv_data.values():
+                    writer.writerow({h: row.get(h, '') for h in headers})
+        except Exception as e:
+            print(f"Ошибка сохранения CSV: {e}")
+    
+    def mark_record_as_checked_and_next(self):
+        """Обновление check_humane=1 в БД и переход к следующей записи"""
+        if not self.db_connection:
+            return
+        
+        current_row = self.db_table.currentRow()
+        if current_row < 0:
+            return
+        
+        # Получаем ID текущей записи (предполагаем, что есть колонка id или rowid)
+        # Находим первичный ключ
+        primary_key_value = None
+        primary_key_name = None
+        
+        # Пробуем найти колонку 'id' или используем первую колонку как идентификатор
+        for col_idx, col_name in enumerate(self.selected_db_columns):
+            item = self.db_table.item(current_row, col_idx)
+            if col_name.lower() == 'id' and item:
+                primary_key_value = item.text()
+                primary_key_name = 'id'
+                break
+        
+        # Если не нашли 'id', пробуем использовать первую колонку
+        if not primary_key_value and self.selected_db_columns:
+            item = self.db_table.item(current_row, 0)
+            if item:
+                primary_key_value = item.text()
+                primary_key_name = self.selected_db_columns[0]
+        
+        if primary_key_value and primary_key_name:
+            try:
+                cursor = self.db_connection.cursor()
+                # Обновляем check_humane=1
+                update_query = f"UPDATE {self.current_table} SET check_humane = 1 WHERE {primary_key_name} = ?"
+                cursor.execute(update_query, (primary_key_value,))
+                self.db_connection.commit()
+                
+                # Переходим к следующей невыполненной записи
+                self.move_to_next_unchecked_record()
+            except Exception as e:
+                print(f"Ошибка обновления БД: {e}")
+    
+    def move_to_next_unchecked_record(self):
+        """Переход к следующей записи с check_humane=0"""
+        if not self.db_connection or not self.current_table:
+            return
+        
+        try:
+            cursor = self.db_connection.cursor()
+            # Получаем следующую запись с check_humane=0
+            query = f"SELECT * FROM {self.current_table} WHERE check_humane = 0 LIMIT 1"
+            cursor.execute(query)
+            next_record = cursor.fetchone()
+            
+            if next_record:
+                # Получаем названия колонок
+                columns = [description[0] for description in cursor.description]
+                
+                # Находим индекс нужной колонки для выделения
+                # Просто обновляем таблицу и выделяем первую строку
+                self.refresh_table_display()
+                
+                # Выделяем первую строку (следующую невыполненную запись)
+                if self.db_table.rowCount() > 0:
+                    self.db_table.selectRow(0)
+                    self.statusBar.showMessage("Переход к следующей записи")
+            else:
+                self.statusBar.showMessage("Все записи обработаны!")
+                QMessageBox.information(self, "Готово", "Все записи обработаны!")
+        except Exception as e:
+            print(f"Ошибка перехода к следующей записи: {e}")
     
     def clear_download_folder(self):
         """Очистка папки загрузки"""
