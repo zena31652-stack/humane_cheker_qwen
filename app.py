@@ -227,6 +227,32 @@ class MainWindow(QMainWindow):
         top_layout.addStretch()
         main_layout.addWidget(top_group)
         
+        # Панель ввода данных для выгрузки
+        input_group = QGroupBox("Данные для выгрузки (заполните перед обработкой)")
+        input_layout = QHBoxLayout(input_group)
+        
+        input_layout.addWidget(QLabel("Модель:"))
+        self.model_input = QLineEdit()
+        self.model_input.setPlaceholderText("Название модели")
+        input_layout.addWidget(self.model_input)
+        
+        input_layout.addWidget(QLabel("Slug компании:"))
+        self.slug_input = QLineEdit()
+        self.slug_input.setPlaceholderText("slug")
+        input_layout.addWidget(self.slug_input)
+        
+        input_layout.addWidget(QLabel("UUID компании:"))
+        self.uuid_input = QLineEdit()
+        self.uuid_input.setPlaceholderText("UUID")
+        input_layout.addWidget(self.uuid_input)
+        
+        input_layout.addWidget(QLabel("Категория компании:"))
+        self.category_input = QLineEdit()
+        self.category_input.setPlaceholderText("Категория")
+        input_layout.addWidget(self.category_input)
+        
+        main_layout.addWidget(input_group)
+        
         # Разделитель для основной области
         splitter = QSplitter(Qt.Orientation.Horizontal)
         
@@ -761,6 +787,20 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Предупреждение", "Выберите папку выгрузки")
             return
         
+        # Получаем данные из полей ввода
+        model = self.model_input.text().strip()
+        slug = self.slug_input.text().strip()
+        company_uuid = self.uuid_input.text().strip()
+        category = self.category_input.text().strip()
+        
+        # Проверяем заполненность обязательных полей
+        if not company_uuid:
+            QMessageBox.warning(
+                self, "Предупреждение",
+                "Заполните поле 'UUID компании' перед обработкой"
+            )
+            return
+        
         # Создаем ключ для поиска существующей записи
         key = (url_item, url_pagination)
         
@@ -768,11 +808,8 @@ class MainWindow(QMainWindow):
         existing_data = self.csv_data.get(key, {})
         existing_uuid = existing_data.get('uuid_developer', '')
         
-        # Генерируем или используем существующий UUID
-        if not existing_uuid:
-            record_uuid = str(uuid.uuid4())
-        else:
-            record_uuid = existing_uuid
+        # Используем UUID из поля ввода или из существующей записи
+        record_uuid = company_uuid if company_uuid else (existing_uuid if existing_uuid else str(uuid.uuid4()))
         
         # Пути к папкам
         files_folder = os.path.join(self.upload_folder, "files")
@@ -854,16 +891,16 @@ class MainWindow(QMainWindow):
                         f"Ошибка копирования изображения {img_path}: {e}"
                     )
         
-        # Обновляем CSV данные
+        # Обновляем CSV данные с учетом введенных значений
         file_name_str = '; '.join(processed_info_files) if processed_info_files else ''
         photo_str = '; '.join(processed_photos) if processed_photos else ''
         
         if key not in self.csv_data:
             self.csv_data[key] = {
                 'uuid_developer': record_uuid,
-                'slug': '',
-                'category_car': '',
-                'model': '',
+                'slug': slug,
+                'category_car': category,
+                'model': model,
                 'file_name': file_name_str,
                 'photo': photo_str,
                 'url_item': url_item,
@@ -872,6 +909,14 @@ class MainWindow(QMainWindow):
         else:
             # Обновляем существующую запись
             self.csv_data[key]['uuid_developer'] = record_uuid
+            # Обновляем поля из инпутов если они заполнены
+            if slug:
+                self.csv_data[key]['slug'] = slug
+            if category:
+                self.csv_data[key]['category_car'] = category
+            if model:
+                self.csv_data[key]['model'] = model
+            
             if file_name_str:
                 existing = self.csv_data[key].get('file_name', '')
                 if existing:
